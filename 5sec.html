@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hand Tracking + Button Tap Detection</title>
+  <style>
+    body, html {
+      margin: 0; padding: 0; overflow: hidden;
+      background: black;
+    }
+    video, canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      object-fit: cover;
+    }
+    video {
+      z-index: 1;
+      transform: scaleX(-1); /* Mirror effect */
+      width: 320px; height: 240px;
+      border-radius: 10px;
+      bottom: 20px; left: 20px;
+    }
+    canvas {
+      z-index: 2;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <video id="webcam" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+
+  <!-- TensorFlow and Handpose model scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@3.14.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.14.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@3.14.0/dist/tf-backend-webgl.min.js"></script>
+
+  <script>
+    const video = document.getElementById("webcam");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+
+    const TAP_HOVER_TIME = 500; // milliseconds
+
+    const buttons = [
+      { x: window.innerWidth * 0.3, y: window.innerHeight * 0.4, r: 40, color: "blue", hover: false, tapTimer: null, tapped: false },
+      { x: window.innerWidth * 0.5, y: window.innerHeight * 0.5, r: 50, color: "green", hover: false, tapTimer: null, tapped: false },
+      { x: window.innerWidth * 0.7, y: window.innerHeight * 0.4, r: 40, color: "yellow", hover: false, tapTimer: null, tapped: false },
+    ];
+
+    function drawButtons() {
+      buttons.forEach(btn => {
+        ctx.beginPath();
+        ctx.arc(btn.x, btn.y, btn.r, 0, 2 * Math.PI);
+        if (btn.tapped) {
+          ctx.fillStyle = "purple";  // tapped color feedback
+        } else if (btn.hover) {
+          ctx.fillStyle = "red";
+        } else {
+          ctx.fillStyle = btn.color;
+        }
+        ctx.fill();
+      });
+    }
+
+    function isInside(x, y, btn) {
+      const dx = x - btn.x;
+      const dy = y - btn.y;
+      return Math.sqrt(dx * dx + dy * dy) < btn.r;
+    }
+
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => resolve();
+      });
+    }
+
+    async function main() {
+      await setupCamera();
+
+      await tf.setBackend('webgl');
+      await tf.ready();
+
+      let model;
+      try {
+        model = await handpose.load();
+        console.log("Model loaded.");
+      } catch (err) {
+        console.error("Failed to load model:", err);
+        alert("Model loading failed! See console for details.");
+        return;
+      }
+
+      async function detect() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Reset hover each frame
+        buttons.forEach(btn => btn.hover = false);
+
+        let predictions = [];
+        try {
+          predictions = await model.estimateHands(video);
+        } catch (e) {
+          console.error("Hand estimation error:", e);
+        }
+
+        if (predictions.length > 0) {
+          const hand = predictions[0];
+          hand.landmarks.forEach(point => {
+            const scaleX = canvas.width / video.videoWidth;
+            const scaleY = canvas.height / video.videoHeight;
+            const x = canvas.width - point[0] * scaleX;
+            const y = point[1] * scaleY;
+
+            // Draw landmark dot
+            ctx.beginPath();
+            ctx.arc(x, y, 6, 0, 2 * Math.PI);
+            ctx.fillStyle = "red";
+            ctx.fill();
+
+            // Check hover and start tap timer
+            buttons.forEach(btn => {
+              if (isInside(x, y, btn)) {
+                btn.hover = true;
+                if (!btn.tapTimer && !btn.tapped) {
+                  btn.tapTimer = setTimeout(() => {
+                    btn.tapped = true;
+                    console.log("Button tapped:", btn.color);
+                    // Yahan aap button tap ka action add kar sakte hain
+                  }, TAP_HOVER_TIME);
+                }
+              }
+            });
+          });
+        }
+
+        // Clear timers if finger moved away
+        buttons.forEach(btn => {
+          if (!btn.hover) {
+            if (btn.tapTimer) {
+              clearTimeout(btn.tapTimer);
+              btn.tapTimer = null;
+            }
+            btn.tapped = false;  // reset tap after finger leaves
+          }
+        });
+
+        drawButtons();
+        requestAnimationFrame(detect);
+      }
+
+      detect();
+    }
+
+    main();
+  </script>
+</body>
+</html>

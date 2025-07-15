@@ -1,18 +1,38 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Hand Tracking with Floating Buttons</title>
+  <title>Hand Tracking + Visible Floating Buttons</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #222; }
-    video, canvas { position: absolute; top: 0; left: 0; }
-    video { transform: scaleX(-1); z-index: 1; }
-    canvas { z-index: 2; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #111;
+    }
+    #webcam {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      transform: scaleX(-1);
+      z-index: 1;
+    }
+    #canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 2;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
 
-<video id="webcam" autoplay playsinline width="640" height="480"></video>
-<canvas id="canvas" width="640" height="480"></canvas>
+<video id="webcam" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
@@ -24,12 +44,20 @@
   const ctx = canvas.getContext('2d');
   let model;
 
-  // Floating buttons
+  // Define buttons with screen % positions
   const buttons = [
-    { x: 150, y: 150, r: 50, color: 'blue', hover: false },
-    { x: 320, y: 200, r: 60, color: 'green', hover: false },
-    { x: 480, y: 150, r: 50, color: 'orange', hover: false },
+    { x: 0.25, y: 0.3, r: 60, color: 'blue', hover: false },
+    { x: 0.5, y: 0.5, r: 70, color: 'green', hover: false },
+    { x: 0.75, y: 0.3, r: 60, color: 'orange', hover: false },
   ];
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
 
   async function setupCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -54,28 +82,37 @@
   async function detectHands() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Convert button x/y % into px
+    const renderedButtons = buttons.map(b => ({
+      ...b,
+      x: b.x * canvas.width,
+      y: b.y * canvas.height
+    }));
+
     // Draw buttons
-    buttons.forEach(button => {
+    renderedButtons.forEach(button => {
       ctx.beginPath();
       ctx.arc(button.x, button.y, button.r, 0, 2 * Math.PI);
       ctx.fillStyle = button.hover ? 'red' : button.color;
       ctx.fill();
     });
 
-    buttons.forEach(b => b.hover = false);
+    renderedButtons.forEach(b => b.hover = false);
 
     const predictions = await model.estimateHands(video);
-
     if (predictions.length > 0) {
       for (let hand of predictions) {
         for (let point of hand.landmarks) {
+          const x = point[0] / video.videoWidth * canvas.width;
+          const y = point[1] / video.videoHeight * canvas.height;
+
           ctx.beginPath();
-          ctx.arc(point[0], point[1], 8, 0, 2 * Math.PI);
+          ctx.arc(x, y, 8, 0, 2 * Math.PI);
           ctx.fillStyle = 'red';
           ctx.fill();
 
-          buttons.forEach(button => {
-            if (isInsideButton(point[0], point[1], button)) {
+          renderedButtons.forEach(button => {
+            if (isInsideButton(x, y, button)) {
               button.hover = true;
             }
           });

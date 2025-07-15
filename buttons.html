@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Hand Tracking with Floating Buttons</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #222; }
+    video, canvas { position: absolute; top: 0; left: 0; }
+    video { transform: scaleX(-1); z-index: 1; }
+    canvas { z-index: 2; }
+  </style>
+</head>
+<body>
+
+<video id="webcam" autoplay playsinline width="640" height="480"></video>
+<canvas id="canvas" width="640" height="480"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+
+<script>
+  const video = document.getElementById('webcam');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  let model;
+
+  // Floating buttons
+  const buttons = [
+    { x: 150, y: 150, r: 50, color: 'blue', hover: false },
+    { x: 320, y: 200, r: 60, color: 'green', hover: false },
+    { x: 480, y: 150, r: 50, color: 'orange', hover: false },
+  ];
+
+  async function setupCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
+    return new Promise(resolve => {
+      video.onloadedmetadata = () => resolve(video);
+    });
+  }
+
+  function isInsideButton(px, py, button) {
+    const dx = px - button.x;
+    const dy = py - button.y;
+    return Math.sqrt(dx * dx + dy * dy) < button.r;
+  }
+
+  async function main() {
+    await setupCamera();
+    model = await handpose.load();
+    detectHands();
+  }
+
+  async function detectHands() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw buttons
+    buttons.forEach(button => {
+      ctx.beginPath();
+      ctx.arc(button.x, button.y, button.r, 0, 2 * Math.PI);
+      ctx.fillStyle = button.hover ? 'red' : button.color;
+      ctx.fill();
+    });
+
+    buttons.forEach(b => b.hover = false);
+
+    const predictions = await model.estimateHands(video);
+
+    if (predictions.length > 0) {
+      for (let hand of predictions) {
+        for (let point of hand.landmarks) {
+          ctx.beginPath();
+          ctx.arc(point[0], point[1], 8, 0, 2 * Math.PI);
+          ctx.fillStyle = 'red';
+          ctx.fill();
+
+          buttons.forEach(button => {
+            if (isInsideButton(point[0], point[1], button)) {
+              button.hover = true;
+            }
+          });
+        }
+      }
+    }
+
+    requestAnimationFrame(detectHands);
+  }
+
+  main();
+</script>
+
+</body>
+</html>

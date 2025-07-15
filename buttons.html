@@ -1,30 +1,25 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Hand Tracking + Visible Floating Buttons</title>
+  <title>Hand Tracking Only</title>
   <style>
-    body {
+    body, html {
       margin: 0;
+      padding: 0;
       overflow: hidden;
-      background: #111;
+      background: black;
     }
-    #webcam {
+    video, canvas {
       position: absolute;
       top: 0;
       left: 0;
       width: 100vw;
       height: 100vh;
       object-fit: cover;
-      transform: scaleX(-1);
-      z-index: 1;
+      transform: scaleX(-1); /* Flip for mirror view */
     }
-    #canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: 2;
+    canvas {
+      z-index: 10;
       pointer-events: none;
     }
   </style>
@@ -34,93 +29,58 @@
 <video id="webcam" autoplay playsinline muted></video>
 <canvas id="canvas"></canvas>
 
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@3.14.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.14.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.7"></script>
 
 <script>
   const video = document.getElementById('webcam');
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
-  let model;
 
-  // Define buttons with screen % positions
-  const buttons = [
-    { x: 0.25, y: 0.3, r: 60, color: 'blue', hover: false },
-    { x: 0.5, y: 0.5, r: 70, color: 'green', hover: false },
-    { x: 0.75, y: 0.3, r: 60, color: 'orange', hover: false },
-  ];
+  async function setupCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
+    return new Promise(resolve => {
+      video.onloadedmetadata = () => {
+        resolve();
+      };
+    });
+  }
 
   function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
   }
 
-  window.addEventListener('resize', resizeCanvas);
-  resizeCanvas();
-
-  async function setupCamera() {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
-    return new Promise(resolve => {
-      video.onloadedmetadata = () => resolve(video);
-    });
-  }
-
-  function isInsideButton(px, py, button) {
-    const dx = px - button.x;
-    const dy = py - button.y;
-    return Math.sqrt(dx * dx + dy * dy) < button.r;
-  }
-
   async function main() {
     await setupCamera();
-    model = await handpose.load();
-    detectHands();
-  }
+    resizeCanvas();
+    const model = await handpose.load();
 
-  async function detectHands() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    async function detect() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const predictions = await model.estimateHands(video);
 
-    // Convert button x/y % into px
-    const renderedButtons = buttons.map(b => ({
-      ...b,
-      x: b.x * canvas.width,
-      y: b.y * canvas.height
-    }));
+      if (predictions.length > 0) {
+        const landmarks = predictions[0].landmarks;
 
-    // Draw buttons
-    renderedButtons.forEach(button => {
-      ctx.beginPath();
-      ctx.arc(button.x, button.y, button.r, 0, 2 * Math.PI);
-      ctx.fillStyle = button.hover ? 'red' : button.color;
-      ctx.fill();
-    });
-
-    renderedButtons.forEach(b => b.hover = false);
-
-    const predictions = await model.estimateHands(video);
-    if (predictions.length > 0) {
-      for (let hand of predictions) {
-        for (let point of hand.landmarks) {
-          const x = point[0] / video.videoWidth * canvas.width;
-          const y = point[1] / video.videoHeight * canvas.height;
+        for (let i = 0; i < landmarks.length; i++) {
+          const [x, y] = landmarks[i];
+          const scaledX = canvas.width - (x / video.videoWidth) * canvas.width;
+          const scaledY = (y / video.videoHeight) * canvas.height;
 
           ctx.beginPath();
-          ctx.arc(x, y, 8, 0, 2 * Math.PI);
+          ctx.arc(scaledX, scaledY, 5, 0, 2 * Math.PI);
           ctx.fillStyle = 'red';
           ctx.fill();
-
-          renderedButtons.forEach(button => {
-            if (isInsideButton(x, y, button)) {
-              button.hover = true;
-            }
-          });
         }
       }
+
+      requestAnimationFrame(detect);
     }
 
-    requestAnimationFrame(detectHands);
+    detect();
   }
 
   main();

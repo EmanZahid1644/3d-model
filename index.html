@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Webcam Test</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    video { transform: scaleX(-1); border: 3px solid #0f0; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <video autoplay playsinline width="640" height="480"></video>
+
+  <script>
+    const video = document.querySelector('video');
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        video.srcObject = stream;
+      })
+      .catch(err => {
+        alert('Webcam access denied or not available.');
+        console.error(err);
+      });
+  </script>
+</body>
+</html>
